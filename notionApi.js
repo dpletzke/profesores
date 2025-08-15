@@ -11,7 +11,7 @@ const api = axios.create({
 
 const fetchBlocks = async blockId => {
   try {
-    console.log(`[notionApi] Fetching blocks for blockId: ${blockId}`);
+    // console.log(`[notionApi] Fetching blocks for blockId: ${blockId}`);
     let all = [];
     let next = null;
     const MAX_PAGES = 10;
@@ -24,10 +24,10 @@ const fetchBlocks = async blockId => {
       next = data.next_cursor;
       pages++;
     } while (next);
-    console.log(`[notionApi] Fetched ${all.length} blocks for blockId: ${blockId}`);
+    // console.log(`[notionApi] Fetched ${all.length} blocks for blockId: ${blockId}`);
     return all;
   } catch (e) {
-    console.error(`[notionApi] Error fetching blocks for blockId: ${blockId}`, e.message);
+    // console.error(`[notionApi] Error fetching blocks for blockId: ${blockId}`, e.message);
     return [];
   }
 };

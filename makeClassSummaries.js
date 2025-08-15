@@ -6,22 +6,17 @@ const { fetchBlocks } = require("./notionApi");
 const {
   readSummaryFile,
   writeSummaryFile,
-  injectSummary,
+  addSummary,
   extractDateFromText,
   isDateInSelectedMonth,
   readArgValue,
-  summaryIsAlreadyinFile,
+  summaryAlreadyExists,
 } = require("./classSummaryHelpers");
 const {
   summarizeText,
 } = require("./openAiApi");
 
 const STUDENT_LIST_PAGE_ID = process.env.STUDENT_LIST_PAGE_ID;
-
-const TESTING_MODE =
-  process.argv.includes("--testing") || process.argv.includes("-t");
-
-
 
 const getMonthFromArgs = () => {
   const value = readArgValue(["--month", "-m"]);
@@ -45,10 +40,10 @@ const processToggleBlock = async (block, selectedMonth) => {
     console.log(`[makeClassSummaries] No children found for block: ${block.id}`);
     return null;
   }
-  const summary = children
+  const notes = children
     .map((b) => b[b.type]?.rich_text?.map((t) => t.plain_text).join(" ") || "")
     .join("\n");
-  return { date: extracted.fullDate, summary };
+  return { date: extracted.fullDate, notes };
 };
 
 const getStudentPages = async () => {
@@ -59,7 +54,7 @@ const getStudentPages = async () => {
   return pages;
 };
 
-const getClassSummaries = async (pageId, selectedMonth) => {
+const getClassNotes = async (pageId, selectedMonth) => {
   console.log(
     `[makeClassSummaries] Fetching class summaries for pageId: ${pageId}`,
   );
@@ -75,12 +70,6 @@ const getClassSummaries = async (pageId, selectedMonth) => {
     togglesWithDates.map((b) => processToggleBlock(b, selectedMonth)),
   );
   const valid = processed.filter(Boolean);
-  if (TESTING_MODE && valid.length) {
-    console.log(
-      `[makeClassSummaries] TESTING_MODE: Only using first summary for pageId: ${pageId}`,
-    );
-    return [valid[0]];
-  }
   return valid;
 };
 
@@ -94,21 +83,22 @@ const compileSummaries = async () => {
   const selectedMonth = getSelectedMonth();
   console.log(`[makeClassSummaries] Selected month: ${selectedMonth}`);
   const summaryFilePath = `summaries_${selectedMonth}.txt`;
-  let lines = readSummaryFile(summaryFilePath);
+  let summaries = readSummaryFile(summaryFilePath);
 
   await Promise.all(
     studentPages.map(async (student) => {
-      const summaries = await getClassSummaries(student.id, selectedMonth);
-      if (!summaries.length) {
+      const studentNotes = await getClassNotes(student.id, selectedMonth);
+      if (!studentNotes.length) {
+        console.log(JSON.stringify(studentNotes, null, 2));
         console.log(
-          `[makeClassSummaries] No summaries for student: ${student.child_page.title}`,
+          `[makeClassSummaries] No notes for student: ${student.child_page.title}`,
         );
         return;
       }
       await Promise.all(
-        summaries.map(async ({ date, summary }) => {
-          if (summaryIsAlreadyinFile({
-            lines,
+        studentNotes.map(async ({ date, notes }) => {
+          if (summaryAlreadyExists({
+            summaries,
             student: student.child_page.title,
             date,
           })) {
@@ -117,18 +107,18 @@ const compileSummaries = async () => {
             );
             return;
           }
-          const hasEnoughNotes = summary.length >= 30;
-          const content =
-            !hasEnoughNotes ? `NOT ENOUGH NOTES ${summary}` : await summarizeText(summary);
-          lines = injectSummary(lines, student.child_page.title, date, content);
+          const hasEnoughNotes = notes.length >= 30;
+          const newSummaryText =
+            !hasEnoughNotes ? `NOT ENOUGH NOTES ${notes}` : await summarizeText(notes);
+          addSummary({ summaries, studentName: student.child_page.title, date, newSummaryText });
           console.log(
-            `[makeClassSummaries] Injected summary for ${student.child_page.title} on ${date}`,
+            `[makeClassSummaries] Added summary for ${student.child_page.title} on ${date}`,
           );
         }),
       );
     }),
   );
-  writeSummaryFile(summaryFilePath, lines);
+  writeSummaryFile(summaryFilePath, summaries);
   console.log(`[makeClassSummaries] Wrote summaries to ${summaryFilePath}`);
 };
 

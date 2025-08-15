@@ -25,6 +25,7 @@ const summarizeText = async (text) => {
       ],
     });
     return data.choices[0].message.content;
+    // return "SUMMARY PLACEHOLDER";
   } catch (e) {
     console.error("[makeClassSummaries] Error summarizing text:", e.message);
     return text;

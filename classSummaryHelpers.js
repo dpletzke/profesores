@@ -1,29 +1,8 @@
 const fs = require('fs');
 //find the student header, then find the next student header or EOF ('starts with #') then find if the date is within that section
-const summaryIsAlreadyinFile = ({ lines, date, student }) => {
-  console.log(`[classSummaryHelpers] Checking if summary exists for ${student} on ${date}`);
-  const text = lines.join('\n');
-
-  // Isolate the student's section: from "# {student}" up to the next top-level "# " or EOF
-  const studentHeader = text.findIndex(line => line.startsWith(`# ${student}`));
-  if (studentHeader === -1) {
-    console.log(`[classSummaryHelpers] No section found for student: ${student}`);
-    return false;
-  }
-  const nextHeaderIndex = text.findIndex((line, index) => index > studentHeader && line.startsWith('# '));
-  const studentSection = nextHeaderIndex === -1 ? text.slice(studentHeader) : text.slice(studentHeader, nextHeaderIndex);
-  console.log(`[classSummaryHelpers] Found section for student: ${studentSection}`);
-  // Inside that, check if the date already exists
-  const dateHeader = new RegExp(`(^|\\n)##\\s*${date}\\s*\\n`, 'm');
-  if (!studentSection.match(dateHeader)) {
-    console.log(`[classSummaryHelpers] No date header found for ${date} in section for ${student}`);
-    return false;
-  }
-  // If the date exists, we can assume a summary is already there
-  console.log(`[classSummaryHelpers] Summary already exists for ${student} on ${date}`);
-  return true;
+const summaryAlreadyExists = ({ summaries, date, student }) => {
+  return !!(summaries[student] && summaries[student][date]);
 };
-
 
 const DATE_REGEX = /(\d{4})-(\d{2})-(\d{2})/;
 
@@ -39,37 +18,54 @@ const isDateInSelectedMonth = (extractedDate, selectedMonth) => {
   return extractedDate.fullDate.startsWith(selectedMonth);
 };
 
+// Read the summary file into a nested object: { [student]: { [date]: summaryText } } using regex
 const readSummaryFile = filePath => {
   if (!fs.existsSync(filePath)) {
     console.log(`[classSummaryHelpers] File does not exist: ${filePath}`);
-    return [];
+    return {};
   }
   console.log(`[classSummaryHelpers] Reading file: ${filePath}`);
-  return fs.readFileSync(filePath, 'utf-8').split('\n');
+  const text = fs.readFileSync(filePath, 'utf-8');
+  const summaries = {};
+  // Match each student section
+  const studentSectionRegex = /^# (.+?)\s*\n([\s\S]*?)(?=^# |\Z)/gm;
+  let studentMatch;
+  while ((studentMatch = studentSectionRegex.exec(text)) !== null) {
+    const student = studentMatch[1].trim();
+    const section = studentMatch[2];
+    summaries[student] = {};
+    // Match each date/summary in the student section
+    const dateSectionRegex = /^## (.+?)\s*\n([\s\S]*?)(?=^## |\Z)/gm;
+    let dateMatch;
+    while ((dateMatch = dateSectionRegex.exec(section)) !== null) {
+      const date = dateMatch[1].trim();
+      const summary = dateMatch[2].trim();
+      summaries[student][date] = summary;
+    }
+  }
+  // Remove or comment out the debug log below if not needed:
+  // console.log(JSON.stringify(summaries, null, 2));
+  return summaries;
 };
 
-const writeSummaryFile = (filePath, lines) => {
-  fs.writeFileSync(filePath, lines.join('\n'), 'utf-8');
+// Write the summary object back to file in the same format using string building
+const writeSummaryFile = (filePath, summaries) => {
+  let text = '';
+  for (const student of Object.keys(summaries)) {
+    text += `# ${student}\n`;
+    const dates = Object.keys(summaries[student]).sort();
+    for (const date of dates) {
+      text += `## ${date}\n${summaries[student][date]}\n\n`;
+    }
+  }
+  fs.writeFileSync(filePath, text.trim() + '\n', 'utf-8');
   console.log(`[classSummaryHelpers] Wrote file: ${filePath}`);
 };
 
-const injectSummary = (lines, studentName, date, summaryText) => {
-  const header = `# ${studentName}`;
-  const newSection = `## ${date}\n${summaryText}\n`;
-  const headerIndex = lines.findIndex(line => line.trim() === header);
-  if (headerIndex === -1) {
-    console.log(`[classSummaryHelpers] Adding new student section: ${studentName}`);
-    return [...lines, header, newSection];
-  }
-  let insertAt = headerIndex + 1;
-  while (insertAt < lines.length && !(lines[insertAt].startsWith('#') && !lines[insertAt].startsWith('##'))) {
-    if (lines[insertAt].startsWith('## ') && lines[insertAt].slice(3).trim() > date) break;
-    insertAt++;
-  }
-  const updated = [...lines];
-  updated.splice(insertAt, 0, newSection);
-  console.log(`[classSummaryHelpers] Injected summary for ${studentName} on ${date}`);
-  return updated;
+const addSummary = ({ summaries, studentName, date, newSummaryText }) => {
+  if (!summaries[studentName]) summaries[studentName] = {};
+  summaries[studentName][date] = newSummaryText;
+  // No return needed
 };
 
 // Helper functions for argument parsing and month selection
@@ -89,9 +85,9 @@ const readArgValue = keys => {
 module.exports = {
   extractDateFromText,
   isDateInSelectedMonth,
-  injectSummary,
+  addSummary,
   readSummaryFile,
   writeSummaryFile,
   readArgValue,
-  summaryIsAlreadyinFile,
+  summaryAlreadyExists,
 };
