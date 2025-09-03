@@ -13,7 +13,6 @@ const openai = axios.create({
 
 const summarizeText = async (text) => {
   try {
-    console.log("[makeClassSummaries] Summarizing text with OpenAI...");
     const system =
       "For all lists provide a comma separated list. Use any style.";
     const user = `Provide a summary in 20 words or less of these notes, as a list of phrases. Please give the topic and grammar practiced. Use any style. For example: ‘Future tense, past tense, present continuous, grammar corrections, business vocabulary, pronunciation, onomatopoeia, to be past tense, relaxed pronunciation.’ Notes: ${text}`;
@@ -27,7 +26,7 @@ const summarizeText = async (text) => {
     return data.choices[0].message.content;
     // return "SUMMARY PLACEHOLDER";
   } catch (e) {
-    console.error("[makeClassSummaries] Error summarizing text:", e.message);
+    console.error("[openAiApi] summarizeText error:", e.message);
     return text;
   }
 };
