@@ -29,10 +29,24 @@ const countClassStatsByParticipant = () => {
       } else {
         summary[name].cancelled[typeKey] += classCancellation?.durationCancelled || 0;
       }
-    } else if (status === "Pending") {
+    } else if (status === "To be held") {
       summary[name].pending[typeKey] += plannedDuration;
     }
   });
+  //print amount earned assuming each class is paid at 62000 per hour for in-person and 50000 per hour for virtual
+  let amountEarned = 0;
+  let virtualWorked = 0;
+  let inPersonWorked = 0;
+  for (const name in summary) {
+    const { held } = summary[name];
+    virtualWorked += held.virtual;
+    inPersonWorked += held.inPerson;
+    amountEarned += (held.inPerson * 62000 + held.virtual * 50000)
+  }
+  console.log(`Total hours worked: ${(virtualWorked + inPersonWorked).toLocaleString()} hours`);
+  console.log(`- Virtual: ${virtualWorked.toLocaleString()} hours`);
+  console.log(`- In-person: ${inPersonWorked.toLocaleString()} hours`);
+  console.log(`Total amount earned: ${amountEarned.toLocaleString()} COP`);
 
   return summary;
 }
@@ -67,4 +81,6 @@ const getFullSummaryByParticipant = () => {
   return result;
 };
 
-console.log(JSON.stringify(getFullSummaryByParticipant(), null, 2));
+
+
+// console.log(JSON.stringify(getFullSummaryByParticipant(), null, 2));
