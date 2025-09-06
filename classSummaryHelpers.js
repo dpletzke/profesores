@@ -82,7 +82,7 @@ const addSummary = ({ summaries, studentName, date, newSummaryText }) => {
   if (!summaries[key]) summaries[key] = {};
   summaries[key][date] = newSummaryText;
   console.log(
-    `[makeClassSummaries] Added summary: ${student.child_page.title} ${date}`,
+    `[makeClassSummaries] Added summary: ${studentName} ${date}`,
   );
 };
 
