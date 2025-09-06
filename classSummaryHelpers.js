@@ -81,6 +81,9 @@ const addSummary = ({ summaries, studentName, date, newSummaryText }) => {
   const key = findMatchingStudentKey(summaries, studentName) || studentName;
   if (!summaries[key]) summaries[key] = {};
   summaries[key][date] = newSummaryText;
+  console.log(
+    `[makeClassSummaries] Added summary: ${student.child_page.title} ${date}`,
+  );
 };
 
 // Helper functions for argument parsing and month selection
