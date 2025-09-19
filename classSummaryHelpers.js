@@ -17,12 +17,15 @@ const findMatchingStudentKey = (summaries, student) => {
   return Object.keys(summaries).find((k) => normalizeStudentName(k) === target);
 };
 
-// Check if a summary for a given student/date already exists
-const summaryAlreadyExists = ({ summaries, date, student }) => {
+// Retrieve the summary text for a given student/date if available
+const getExistingSummary = ({ summaries, student, date }) => {
   const key = findMatchingStudentKey(summaries, student);
-  if (!key) return false;
-  return !!(summaries[key] && summaries[key][date]);
+  if (!key) return null;
+  return summaries[key]?.[date] ?? null;
 };
+
+// Check if a summary for a given student/date already exists
+const summaryAlreadyExists = (args) => !!getExistingSummary(args);
 
 const DATE_REGEX = /(\d{4})-(\d{2})-(\d{2})/;
 
@@ -124,5 +127,6 @@ module.exports = {
   readArgValue,
   readFlag,
   summaryAlreadyExists,
+  getExistingSummary,
   normalizeStudentName,
 };

@@ -12,6 +12,7 @@ const {
   readArgValue,
   readFlag,
   summaryAlreadyExists,
+  getExistingSummary,
 } = require("./classSummaryHelpers");
 const {
   summarizeText,
@@ -91,17 +92,19 @@ const compileSummaries = async () => {
       stats.notesEntries += studentNotes.length;
       await Promise.all(
         studentNotes.map(async ({ date, notes }) => {
+          const existingSummary = getExistingSummary({
+            summaries,
+            student: student.child_page.title,
+            date,
+          });
+          const hasEnoughNotes = notes.length >= MIN_NOTES_LEN;
           if (
-            summaryAlreadyExists({
-              summaries,
-              student: student.child_page.title,
-              date,
-            })
+            existingSummary &&
+            (!existingSummary.startsWith("NOT ENOUGH NOTES") || !hasEnoughNotes)
           ) {
             stats.skippedExisting++;
             return;
           }
-          const hasEnoughNotes = notes.length >= MIN_NOTES_LEN;
           if (dryRun) return;
           const newSummaryText = !hasEnoughNotes
             ? `NOT ENOUGH NOTES ${notes}`
