@@ -18,10 +18,17 @@ const findMatchingStudentKey = (summaries, student) => {
 };
 
 // Retrieve the summary text for a given student/date if available
-const getExistingSummary = ({ summaries, student, date }) => {
+const getExistingSummary = ({ summaries, student, date, classLine }) => {
   const key = findMatchingStudentKey(summaries, student);
   if (!key) return null;
-  return summaries[key]?.[date] ?? null;
+  const studentSummaries = summaries[key] || {};
+  if (classLine && studentSummaries[classLine]) return studentSummaries[classLine];
+  if (studentSummaries[date]) return studentSummaries[date];
+  const prefixedKey = `${date} `;
+  const fallback = Object.keys(studentSummaries).find((k) =>
+    typeof k === "string" && k.startsWith(prefixedKey),
+  );
+  return fallback ? studentSummaries[fallback] : null;
 };
 
 // Check if a summary for a given student/date already exists
@@ -68,24 +75,34 @@ const readSummaryFile = (filePath) => {
 
 // Write the summary object back to file in the same format using string building
 const writeSummaryFile = (filePath, summaries) => {
+  const students = Object.keys(summaries).sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: "base" }),
+  );
   let text = "";
-  for (const student of Object.keys(summaries)) {
+  for (const student of students) {
     text += `# ${student}\n`;
-    const dates = Object.keys(summaries[student]).sort();
-    for (const date of dates) {
-      text += `## ${date}\n${summaries[student][date]}\n\n`;
+    const headers = Object.keys(summaries[student]).sort();
+    for (const header of headers) {
+      text += `## ${header}\n${summaries[student][header]}\n\n`;
     }
   }
   fs.writeFileSync(filePath, text.trim() + "\n", "utf-8");
 };
 
-const addSummary = ({ summaries, studentName, date, newSummaryText }) => {
+const addSummary = ({
+  summaries,
+  studentName,
+  date,
+  classLine,
+  newSummaryText,
+}) => {
   // Prefer adding to an existing key that matches after normalization
   const key = findMatchingStudentKey(summaries, studentName) || studentName;
   if (!summaries[key]) summaries[key] = {};
-  summaries[key][date] = newSummaryText;
+  const header = classLine || date;
+  summaries[key][header] = newSummaryText;
   console.log(
-    `[makeClassSummaries] Added summary: ${studentName} ${date}\n${newSummaryText}`,
+    `[makeClassSummaries] Added summary: ${studentName} ${header}\n${newSummaryText}`,
   );
 };
 

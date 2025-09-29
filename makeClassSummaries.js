@@ -47,7 +47,7 @@ const processToggleBlock = async (block, selectedMonth) => {
   const notes = children
     .map((b) => b[b.type]?.rich_text?.map((t) => t.plain_text).join(" ") || "")
     .join("\n");
-  return { date: extracted.fullDate, notes };
+  return { date: extracted.fullDate, classLine: title.trim(), notes };
 };
 
 const getStudentPages = async () => {
@@ -94,11 +94,12 @@ const compileSummaries = async () => {
       if (!studentNotes.length) return;
       stats.notesEntries += studentNotes.length;
       await Promise.all(
-        studentNotes.map(async ({ date, notes }) => {
+        studentNotes.map(async ({ date, classLine, notes }) => {
           const existingSummary = getExistingSummary({
             summaries,
             student: student.child_page.title,
             date,
+            classLine,
           });
           const hasEnoughNotes = notes.length >= MIN_NOTES_LEN;
           if (
@@ -116,6 +117,7 @@ const compileSummaries = async () => {
             summaries,
             studentName: student.child_page.title,
             date,
+            classLine,
             newSummaryText,
           });
           hasEnoughNotes ? (stats.summarized++) : (stats.placeholders++);
