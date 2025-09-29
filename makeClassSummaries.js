@@ -1,5 +1,6 @@
 require("dotenv").config();
 
+const fs = require("fs");
 const readline = require("readline-sync");
 
 const { fetchBlocks } = require("./notionApi");
@@ -75,8 +76,10 @@ const compileSummaries = async () => {
   if (!studentPages.length) return;
   const selectedMonth = getSelectedMonth();
   const dryRun = readFlag(["-t", "--test", "--dry-run"]);
-  const summaryFilePath = `summaries_${selectedMonth}.txt`;
+  const summaryFileBase = `summaries_${selectedMonth}`;
+  const summaryFilePath = `${summaryFileBase}.md`;
   let summaries = readSummaryFile(summaryFilePath);
+
   let stats = {
     students: studentPages.length,
     notesEntries: 0,
