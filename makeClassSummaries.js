@@ -34,15 +34,18 @@ const getSelectedMonth = () => {
   return readline.question("Enter the month to filter (YYYY-MM): ").trim();
 };
 
-const processToggleBlock = async (block, selectedMonth) => {
+const processToggleBlock = async (block, selectedMonth, studentName) => {
   const title = block.toggle.rich_text.map((t) => t.plain_text).join(" ");
   const extracted = extractDateFromText(title);
   if (!extracted || !isDateInSelectedMonth(extracted, selectedMonth))
     return null;
   const children = await fetchBlocks(block.id);
   if (!children || !children.length) {
-    console.log(`[makeClassSummaries] No children found for block: ${block.id}`);
-    return null;
+    const labelStudent = studentName ?? "unknown student";
+    const labelDate = extracted?.fullDate ?? "unknown date";
+    console.log(
+      `[makeClassSummaries] No children found for block: ${block.id} (${labelStudent} ${labelDate})`,
+    ); return null;
   }
   const notes = children
     .map((b) => b[b.type]?.rich_text?.map((t) => t.plain_text).join(" ") || "")
@@ -55,8 +58,9 @@ const getStudentPages = async () => {
   return blocks.filter((b) => b.type === "child_page");
 };
 
-const getClassNotes = async (pageId, selectedMonth) => {
-  const blocks = await fetchBlocks(pageId);
+const getClassNotes = async (student, selectedMonth) => {
+  const studentName = student?.child_page?.title;
+  const blocks = await fetchBlocks(student.id);
   const togglesWithDates = blocks.filter(
     (b) =>
       b.type === "toggle" &&
@@ -65,7 +69,7 @@ const getClassNotes = async (pageId, selectedMonth) => {
       ),
   );
   const processed = await Promise.all(
-    togglesWithDates.map((b) => processToggleBlock(b, selectedMonth)),
+    togglesWithDates.map((b) => processToggleBlock(b, selectedMonth, studentName)),
   );
   const valid = processed.filter(Boolean);
   return valid;
@@ -90,7 +94,7 @@ const compileSummaries = async () => {
 
   await Promise.all(
     studentPages.map(async (student) => {
-      const studentNotes = await getClassNotes(student.id, selectedMonth);
+      const studentNotes = await getClassNotes(student, selectedMonth);
       if (!studentNotes.length) return;
       stats.notesEntries += studentNotes.length;
       await Promise.all(
