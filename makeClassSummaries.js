@@ -34,22 +34,32 @@ const getSelectedMonth = () => {
   return readline.question("Enter the month to filter (YYYY-MM): ").trim();
 };
 
-const processToggleBlock = async (block, selectedMonth, studentName) => {
-  const title = block.toggle.rich_text.map((t) => t.plain_text).join(" ");
+const processNotesToggle = async (block, selectedMonth, studentName) => {
+  const titleParts = block.toggle?.rich_text;
+  if (!Array.isArray(titleParts) || titleParts.length === 0) return null;
+
+  const title = titleParts.map((t) => t.plain_text).join(" ");
   const extracted = extractDateFromText(title);
-  if (!extracted || !isDateInSelectedMonth(extracted, selectedMonth))
-    return null;
+  if (!extracted || !isDateInSelectedMonth(extracted, selectedMonth)) return null;
+
   const children = await fetchBlocks(block.id);
-  if (!children || !children.length) {
+  if (!children || children.length === 0) {
     const labelStudent = studentName ?? "unknown student";
     const labelDate = extracted?.fullDate ?? "unknown date";
     console.log(
       `[makeClassSummaries] No children found for block: ${block.id} (${labelStudent} ${labelDate})`,
-    ); return null;
+    );
+    return null;
   }
+
   const notes = children
-    .map((b) => b[b.type]?.rich_text?.map((t) => t.plain_text).join(" ") || "")
+    .map((child) => {
+      const richText = child[child.type]?.rich_text;
+      if (!Array.isArray(richText) || richText.length === 0) return "";
+      return richText.map((t) => t.plain_text).join(" ");
+    })
     .join("\n");
+
   return { date: extracted.fullDate, classLine: title.trim(), notes };
 };
 
@@ -69,7 +79,7 @@ const getClassNotes = async (student, selectedMonth) => {
       ),
   );
   const processed = await Promise.all(
-    togglesWithDates.map((b) => processToggleBlock(b, selectedMonth, studentName)),
+    togglesWithDates.map((b) => processNotesToggle(b, selectedMonth, studentName)),
   );
   const valid = processed.filter(Boolean);
   return valid;
