@@ -1,8 +1,8 @@
 const fs = require("fs");
 
 const DATE_REGEX = /(\d{4})-(\d{2})-(\d{2})/;
-const STUDENT_SECTION_REGEX = /^# (.+?)\s*\n([\s\S]*?)(?=^# |\Z)/gm;
-const DATE_SECTION_REGEX = /^## (.+?)\s*\n([\s\S]*?)(?=^## |\Z)/gm;
+const STUDENT_SECTION_REGEX = /^# (.+?)\s*\n([\s\S]*?)(?=^# |$)/gm;
+const DATE_SECTION_REGEX = /^## (.+?)\s*\n([\s\S]*?)(?=^## |$)/gm;
 const TRUE_VALUES = new Set(["1", "true", "yes"]);
 
 const normalizeStudentName = (value = "") =>
@@ -20,17 +20,17 @@ const findMatchingStudentKey = (summaries, student) => {
   );
 };
 
-const getExistingSummary = ({ summaries, student, date, classLine }) => {
+const getExistingSummary = ({ summaries, student, date }) => {
   const key = findMatchingStudentKey(summaries, student);
   if (!key) return null;
 
-  const entries = summaries[key] ?? {};
-  if (classLine && entries[classLine]) return entries[classLine];
-  if (entries[date]) return entries[date];
+  const entries = summaries[key];
+  if (!entries) return null;
 
-  const prefix = `${date} `;
-  return Object.entries(entries).find(([header]) => header.startsWith(prefix))
-    ?.[1] ?? null;
+  const existing = entries[date];
+  if (!existing) return null;
+
+  return existing.summary ?? null;
 };
 
 const summaryAlreadyExists = (args) => !!getExistingSummary(args);
@@ -50,18 +50,90 @@ const readSummaryFile = (filePath) => {
 
   const summaries = {};
   const fileContents = fs.readFileSync(filePath, "utf-8");
+  const lines = fileContents.split("\n");
 
-  for (const [, rawName, section] of fileContents.matchAll(
-    STUDENT_SECTION_REGEX,
-  )) {
-    const name = rawName.trim();
-    const key = findMatchingStudentKey(summaries, name) ?? name;
-    const studentSummaries = summaries[key] ?? (summaries[key] = {});
+  console.log("[classSummaryHelpers] Starting readSummaryFile", {
+    filePath,
+    rawLength: fileContents.length,
+    totalLines: lines.length,
+  });
 
-    for (const [, rawHeader, body] of section.matchAll(DATE_SECTION_REGEX)) {
-      studentSummaries[rawHeader.trim()] = body.trim();
+  let currentStudentKey = null;
+  let currentTitleText = null;
+  let currentDateKey = null;
+  let currentBodyLines = [];
+
+  const flushSummary = () => {
+    if (!currentStudentKey || !currentDateKey) return;
+    const studentSummaries = summaries[currentStudentKey] ?? (summaries[currentStudentKey] = {});
+    const summary = currentBodyLines.join("\n").trim();
+    studentSummaries[currentDateKey] = {
+      summary,
+      titleText: currentTitleText ?? currentDateKey,
+    };
+    console.log("[classSummaryHelpers] Added entry", {
+      student: currentStudentKey,
+      dateKey: currentDateKey,
+      titleText: currentTitleText,
+      summaryLength: summary.length,
+    });
+    currentTitleText = null;
+    currentDateKey = null;
+    currentBodyLines = [];
+  };
+
+  lines.forEach((rawLine, index) => {
+    const line = rawLine.trim();
+
+    if (line.startsWith("# ")) {
+      flushSummary();
+      const studentName = line.slice(2).trim();
+      const key = findMatchingStudentKey(summaries, studentName) ?? studentName;
+      if (!summaries[key]) summaries[key] = {};
+      currentStudentKey = key;
+      currentTitleText = null;
+      currentDateKey = null;
+      currentBodyLines = [];
+      console.log("[classSummaryHelpers] Parsing student", {
+        student: studentName,
+        key,
+        lineNumber: index + 1,
+      });
+      return;
     }
-  }
+
+    if (!currentStudentKey) return;
+
+    if (line.startsWith("## ")) {
+      flushSummary();
+      currentTitleText = line.slice(3).trim();
+      const extracted = extractDateFromText(currentTitleText);
+      currentDateKey = extracted?.fullDate ?? currentTitleText;
+      currentBodyLines = [];
+      console.log("[classSummaryHelpers] Parsing entry", {
+        student: currentStudentKey,
+        titleText: currentTitleText,
+        dateKey: currentDateKey,
+        lineNumber: index + 1,
+      });
+      return;
+    }
+
+    if (currentDateKey) {
+      currentBodyLines.push(rawLine);
+    }
+  });
+
+  flushSummary();
+
+  console.log("[classSummaryHelpers] Finished readSummaryFile", {
+    filePath,
+    students: Object.keys(summaries).length,
+    entries: Object.values(summaries).reduce(
+      (acc, studentEntries) => acc + Object.keys(studentEntries ?? {}).length,
+      0,
+    ),
+  });
 
   return summaries;
 };
@@ -70,24 +142,41 @@ const writeSummaryFile = (filePath, summaries) => {
   const content = Object.keys(summaries)
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
     .map((student) => {
-      const entries = Object.keys(summaries[student])
+      const entries = Object.keys(summaries[student] ?? {})
         .sort()
-        .map((header) => `## ${header}\n${summaries[student][header]}`.trim())
+        .map((dateKey) => {
+          const value = summaries[student][dateKey] ?? {};
+          const summary = value.summary ?? "";
+          const titleText = value.titleText ?? dateKey;
+          return `## ${titleText}\n${summary}`.trim();
+        })
         .join("\n\n");
-      return `# ${student}\n${entries}`;
+      return `# ${student}\n${entries}`.trim();
     })
     .join("\n\n")
     .trim();
 
-  fs.writeFileSync(filePath, `${content}\n`, "utf-8");
+  const output = content ? `${content}\n` : "";
+  fs.writeFileSync(filePath, output, "utf-8");
+};
+
+const buildSummaryHeader = ({ date, classLine }) => {
+  const trimmedLine = (classLine ?? "").trim();
+  if (!trimmedLine) return date;
+  return trimmedLine.startsWith(date) ? trimmedLine : `${date} ${trimmedLine}`;
 };
 
 const addSummary = ({ summaries, studentName, date, classLine, newSummaryText }) => {
   const key = findMatchingStudentKey(summaries, studentName) ?? studentName;
-  const header = classLine ?? date;
+  const header = buildSummaryHeader({ date, classLine });
 
   if (!summaries[key]) summaries[key] = {};
-  summaries[key][header] = newSummaryText;
+  const entries = summaries[key];
+
+  entries[date] = {
+    summary: newSummaryText,
+    titleText: header,
+  };
 
   console.log(
     `[makeClassSummaries] Added summary: ${studentName} ${header}\n${newSummaryText}`,
