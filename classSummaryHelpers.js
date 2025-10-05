@@ -30,10 +30,13 @@ const getExistingSummary = ({ summaries, student, date }) => {
   const existing = entries[date];
   if (!existing) return null;
 
-  return existing.summary ?? null;
+  return existing;
 };
 
-const summaryAlreadyExists = (args) => !!getExistingSummary(args);
+const summaryAlreadyExists = (args) => {
+  const existing = getExistingSummary(args);
+  return !!(existing && existing.summary);
+};
 
 const extractDateFromText = (text = "") => {
   const match = text.match(DATE_REGEX);
@@ -215,6 +218,7 @@ module.exports = {
   readSummaryFile,
   writeSummaryFile,
   addSummary,
+  buildSummaryHeader,
   readArgValue,
   readFlag,
 };
