@@ -1,6 +1,5 @@
 require("dotenv").config();
 
-const fs = require("fs");
 const readline = require("readline-sync");
 
 const { fetchBlocks } = require("./notionApi");
@@ -12,21 +11,29 @@ const {
   isDateInSelectedMonth,
   readArgValue,
   readFlag,
-  summaryAlreadyExists,
   getExistingSummary,
   buildSummaryHeader,
 } = require("./classSummaryHelpers");
 const {
   summarizeText,
-} = require("./openAiApi");
+} = require("./aiApi");
 
 const STUDENT_LIST_PAGE_ID = process.env.STUDENT_LIST_PAGE_ID;
 const MIN_NOTES_LEN = 30;
+const MONTH_REGEX = /^\d{4}-\d{2}$/;
+
+const getTodayLocalIsoDate = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 
 const getMonthFromArgs = () => {
   const value = readArgValue(["--month", "-m"]);
   if (!value) return null;
-  return /^\d{4}-\d{2}$/.test(value) ? value : null;
+  return MONTH_REGEX.test(value) ? value : null;
 };
 
 const getSelectedMonth = () => {
@@ -66,18 +73,21 @@ const processNotesToggle = async (block, selectedMonth, studentName) => {
 
 const getStudentPages = async () => {
   const blocks = await fetchBlocks(STUDENT_LIST_PAGE_ID);
+  if (!Array.isArray(blocks)) return [];
   return blocks.filter((b) => b.type === "child_page");
 };
 
 const getClassNotes = async (student, selectedMonth) => {
   const studentName = student?.child_page?.title;
   const blocks = await fetchBlocks(student.id);
+  if (!Array.isArray(blocks)) return [];
   const togglesWithDates = blocks.filter(
-    (b) =>
-      b.type === "toggle" &&
-      b.toggle.rich_text.some((t) =>
-        /(\d{4})-(\d{2})-(\d{2})/.test(t.plain_text),
-      ),
+    (b) => {
+      if (b.type !== "toggle") return false;
+      const richText = b.toggle?.rich_text;
+      if (!Array.isArray(richText)) return false;
+      return richText.some((t) => /(\d{4})-(\d{2})-(\d{2})/.test(t.plain_text));
+    },
   );
   const processed = await Promise.all(
     togglesWithDates.map((b) => processNotesToggle(b, selectedMonth, studentName)),
@@ -90,15 +100,24 @@ const compileSummaries = async () => {
   const studentPages = await getStudentPages();
   if (!studentPages.length) return;
   const selectedMonth = getSelectedMonth();
+  if (!MONTH_REGEX.test(selectedMonth)) {
+    console.error(
+      `[makeClassSummaries] Invalid month "${selectedMonth}". Use YYYY-MM.`,
+    );
+    return;
+  }
   const dryRun = readFlag(["-t", "--test", "--dry-run"]);
   const summaryFileBase = `summaries_${selectedMonth}`;
   const summaryFilePath = `${summaryFileBase}.md`;
+  const todayLocalIsoDate = getTodayLocalIsoDate();
   let summaries = readSummaryFile(summaryFilePath);
 
   let stats = {
     students: studentPages.length,
     notesEntries: 0,
     skippedExisting: 0,
+    skippedFuture: 0,
+    failed: 0,
     placeholders: 0,
     summarized: 0,
   };
@@ -110,6 +129,10 @@ const compileSummaries = async () => {
       stats.notesEntries += studentNotes.length;
       await Promise.all(
         studentNotes.map(async ({ date, classLine, notes }) => {
+          if (date > todayLocalIsoDate) {
+            stats.skippedFuture++;
+            return;
+          }
           const header = buildSummaryHeader({ date, classLine });
           const existingEntry = getExistingSummary({
             summaries,
@@ -142,6 +165,13 @@ const compileSummaries = async () => {
           const newSummaryText = !hasEnoughNotes
             ? `NOT ENOUGH NOTES ${notes}`
             : await summarizeText(notes);
+          if (!newSummaryText) {
+            stats.failed++;
+            console.log(
+              `[makeClassSummaries] Failed to summarize ${student.child_page.title} ${date}`,
+            );
+            return;
+          }
           addSummary({
             summaries,
             studentName: student.child_page.title,
@@ -157,7 +187,7 @@ const compileSummaries = async () => {
   if (!dryRun) writeSummaryFile(summaryFilePath, summaries);
   const mode = dryRun ? "DRY RUN" : "DONE";
   console.log(
-    `[makeClassSummaries] ${mode}: students=${stats.students}, entries=${stats.notesEntries}, skipped=${stats.skippedExisting}, summarized=${stats.summarized}, placeholders=${stats.placeholders}${dryRun ? '' : `, wrote=${summaryFilePath}`}`,
+    `[makeClassSummaries] ${mode}: students=${stats.students}, entries=${stats.notesEntries}, skipped=${stats.skippedExisting}, skippedFuture=${stats.skippedFuture}, failed=${stats.failed}, summarized=${stats.summarized}, placeholders=${stats.placeholders}${dryRun ? '' : `, wrote=${summaryFilePath}`}`,
   );
 };
 
