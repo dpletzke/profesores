@@ -164,13 +164,13 @@ const writeSummaryFile = (filePath, summaries) => {
 };
 
 const buildSummaryArtifactData = (summaries, options = {}) => {
-  const students = Object.keys(summaries)
+  const entities = Object.keys(summaries)
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
-    .map((student) => {
-      const entries = Object.keys(summaries[student] ?? {})
+    .map((entity) => {
+      const entries = Object.keys(summaries[entity] ?? {})
         .sort()
         .map((date) => {
-          const value = summaries[student][date] ?? {};
+          const value = summaries[entity][date] ?? {};
           return {
             date,
             titleText: value.titleText ?? date,
@@ -179,7 +179,7 @@ const buildSummaryArtifactData = (summaries, options = {}) => {
         });
 
       return {
-        name: student,
+        name: entity,
         entries,
       };
     });
@@ -187,9 +187,11 @@ const buildSummaryArtifactData = (summaries, options = {}) => {
   return {
     month: options.month ?? null,
     generatedAt: options.generatedAt ?? new Date().toISOString(),
-    studentCount: students.length,
-    entryCount: students.reduce((count, student) => count + student.entries.length, 0),
-    students,
+    studentCount: entities.length,
+    entityCount: entities.length,
+    entryCount: entities.reduce((count, entity) => count + entity.entries.length, 0),
+    students: entities,
+    entities,
   };
 };
 
@@ -206,6 +208,7 @@ const buildSummaryYaml = (summaries, options = {}) => {
     `month: ${data.month === null ? "null" : quoteYamlString(data.month)}`,
     `generatedAt: ${quoteYamlString(data.generatedAt)}`,
     `studentCount: ${data.studentCount}`,
+    `entityCount: ${data.entityCount}`,
     `entryCount: ${data.entryCount}`,
     "students:",
   ];
@@ -215,6 +218,22 @@ const buildSummaryYaml = (summaries, options = {}) => {
     lines.push("    entries:");
 
     student.entries.forEach((entry) => {
+      lines.push(`      - date: ${quoteYamlString(entry.date)}`);
+      lines.push(`        titleText: ${quoteYamlString(entry.titleText)}`);
+      if (entry.summary) {
+        lines.push(`        summary: ${buildYamlLiteralBlock(entry.summary, "          ")}`);
+      } else {
+        lines.push('        summary: ""');
+      }
+    });
+  });
+
+  lines.push("entities:");
+  data.entities.forEach((entity) => {
+    lines.push(`  - name: ${quoteYamlString(entity.name)}`);
+    lines.push("    entries:");
+
+    entity.entries.forEach((entry) => {
       lines.push(`      - date: ${quoteYamlString(entry.date)}`);
       lines.push(`        titleText: ${quoteYamlString(entry.titleText)}`);
       if (entry.summary) {

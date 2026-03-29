@@ -28,6 +28,23 @@ const getMonthIndexCandidates = (artifactRoot, month) => [
   path.join(artifactRoot, "notes", "indexes", `${month}.json`),
 ];
 
+const normalizeEntryLabel = (entry) =>
+  pickString(entry, [
+    "entityLabel",
+    "entityName",
+    "displayLabel",
+    "displayName",
+    "studentName",
+    "label",
+    "pageLabel",
+  ]);
+
+const normalizeEntitySlug = (entry) =>
+  pickString(entry, [
+    "entitySlug",
+    "studentSlug",
+  ]);
+
 const readMatchedNotesText = (entry, indexPath, artifactRoot) => {
   const candidates = [
     entry.notesPath,
@@ -54,14 +71,9 @@ const readMatchedNotesText = (entry, indexPath, artifactRoot) => {
 };
 
 const normalizeMatchedEntry = (entry, indexPath, artifactRoot) => {
-  const displayLabel = pickString(entry, [
-    "displayLabel",
-    "displayName",
-    "studentName",
-    "label",
-  ]);
+  const displayLabel = normalizeEntryLabel(entry);
+  const entitySlug = normalizeEntitySlug(entry);
   const requiredStringFields = [
-    "studentSlug",
     "classDate",
     "sessionId",
     "sessionPath",
@@ -73,6 +85,7 @@ const normalizeMatchedEntry = (entry, indexPath, artifactRoot) => {
 
   const missing = requiredStringFields.filter((field) => !isNonEmptyString(entry?.[field]));
   if (!displayLabel) missing.push("displayLabel");
+  if (!isNonEmptyString(entry?.studentSlug) && !entitySlug) missing.push("studentSlug");
   if (missing.length > 0) {
     throw new Error(
       `[artifactIndexReader] Invalid matched entry in ${indexPath}: missing ${missing.join(", ")}`,
@@ -80,7 +93,8 @@ const normalizeMatchedEntry = (entry, indexPath, artifactRoot) => {
   }
 
   return {
-    studentSlug: entry.studentSlug.trim(),
+    entitySlug,
+    studentSlug: isNonEmptyString(entry?.studentSlug) ? entry.studentSlug.trim() : entitySlug,
     displayLabel,
     classDate: entry.classDate.trim(),
     sessionId: entry.sessionId.trim(),
@@ -94,13 +108,8 @@ const normalizeMatchedEntry = (entry, indexPath, artifactRoot) => {
 };
 
 const normalizeUnmatchedEntry = (entry, indexPath) => {
-  const displayLabel = pickString(entry, [
-    "displayLabel",
-    "displayName",
-    "studentName",
-    "label",
-    "pageLabel",
-  ]);
+  const displayLabel = normalizeEntryLabel(entry);
+  const entitySlug = normalizeEntitySlug(entry);
   const requiredStringFields = [
     "classDate",
     "pageId",
@@ -118,6 +127,7 @@ const normalizeUnmatchedEntry = (entry, indexPath) => {
   }
 
   return {
+    entitySlug: entitySlug ? entitySlug : null,
     studentSlug: entry.studentSlug ?? null,
     displayLabel,
     classDate: entry.classDate.trim(),

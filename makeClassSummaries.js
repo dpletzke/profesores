@@ -80,14 +80,14 @@ const compileSummaries = async () => {
     .slice()
     .sort(
       (a, b) =>
-        a.studentSlug.localeCompare(b.studentSlug) ||
+        (a.entitySlug || a.studentSlug).localeCompare(b.entitySlug || b.studentSlug) ||
         a.classDate.localeCompare(b.classDate) ||
         a.sessionId.localeCompare(b.sessionId) ||
         a.classLine.localeCompare(b.classLine),
     );
 
   let stats = {
-    students: new Set(entries.map((entry) => entry.studentSlug)).size,
+    entities: new Set(entries.map((entry) => entry.entitySlug || entry.studentSlug)).size,
     notesEntries: 0,
     skippedExisting: 0,
     skippedFuture: 0,
@@ -98,7 +98,7 @@ const compileSummaries = async () => {
 
   for (const entry of entries) {
     stats.notesEntries++;
-    const studentLabel = entry.displayLabel;
+    const entityLabel = entry.displayLabel;
     const date = entry.classDate;
     const classLine = entry.classLine;
     const notes = entry.notesText.trim();
@@ -111,7 +111,7 @@ const compileSummaries = async () => {
     const header = buildSummaryHeader({ date, classLine });
     const existingEntry = getExistingSummary({
       summaries,
-      student: studentLabel,
+      student: entityLabel,
       date,
       classLine,
     });
@@ -120,7 +120,7 @@ const compileSummaries = async () => {
       if (existingEntry && existingEntry.titleText !== header) {
         existingEntry.titleText = header;
         console.log(
-          `[makeClassSummaries] Updated title for ${studentLabel} ${date}: ${header}`,
+          `[makeClassSummaries] Updated title for ${entityLabel} ${date}: ${header}`,
         );
       }
     };
@@ -143,13 +143,13 @@ const compileSummaries = async () => {
     if (!newSummaryText) {
       stats.failed++;
       console.log(
-        `[makeClassSummaries] Failed to summarize ${studentLabel} ${date}`,
+        `[makeClassSummaries] Failed to summarize ${entityLabel} ${date}`,
       );
       continue;
     }
     addSummary({
       summaries,
-      studentName: studentLabel,
+      studentName: entityLabel,
       date,
       classLine,
       newSummaryText,
@@ -163,7 +163,7 @@ const compileSummaries = async () => {
   }
   const mode = dryRun ? "DRY RUN" : "DONE";
   console.log(
-    `[makeClassSummaries] ${mode}: students=${stats.students}, entries=${stats.notesEntries}, skipped=${stats.skippedExisting}, skippedFuture=${stats.skippedFuture}, failed=${stats.failed}, summarized=${stats.summarized}, placeholders=${stats.placeholders}${dryRun ? "" : `, wrote=${summaryFilePath}, wroteYaml=${summaryYamlFilePath}`}`,
+    `[makeClassSummaries] ${mode}: entities=${stats.entities}, entries=${stats.notesEntries}, skipped=${stats.skippedExisting}, skippedFuture=${stats.skippedFuture}, failed=${stats.failed}, summarized=${stats.summarized}, placeholders=${stats.placeholders}${dryRun ? "" : `, wrote=${summaryFilePath}, wroteYaml=${summaryYamlFilePath}`}`,
   );
 };
 
