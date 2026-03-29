@@ -2,14 +2,12 @@ require("dotenv").config();
 
 const readline = require("readline-sync");
 
-const { fetchBlocks } = require("./notionApi");
+const { readMonthArtifactIndex } = require("./artifactIndexReader");
 const {
   readSummaryFile,
   writeSummaryFile,
   writeSummaryYamlFile,
   addSummary,
-  extractDateFromText,
-  isDateInSelectedMonth,
   readArgValue,
   readFlag,
   getExistingSummary,
@@ -19,7 +17,7 @@ const {
   summarizeText,
 } = require("./aiApi");
 
-const STUDENT_LIST_PAGE_ID = process.env.STUDENT_LIST_PAGE_ID;
+const ETH_ARTIFACT_ROOT = process.env.ETH_ARTIFACT_ROOT;
 const MIN_NOTES_LEN = 30;
 const MONTH_REGEX = /^\d{4}-\d{2}$/;
 
@@ -43,63 +41,7 @@ const getSelectedMonth = () => {
   return readline.question("Enter the month to filter (YYYY-MM): ").trim();
 };
 
-const processNotesToggle = async (block, selectedMonth, studentName) => {
-  const titleParts = block.toggle?.rich_text;
-  if (!Array.isArray(titleParts) || titleParts.length === 0) return null;
-
-  const title = titleParts.map((t) => t.plain_text).join(" ");
-  const extracted = extractDateFromText(title);
-  if (!extracted || !isDateInSelectedMonth(extracted, selectedMonth)) return null;
-
-  const children = await fetchBlocks(block.id);
-  if (!children || children.length === 0) {
-    const labelStudent = studentName ?? "unknown student";
-    const labelDate = extracted?.fullDate ?? "unknown date";
-    console.log(
-      `[makeClassSummaries] No children found for block: ${block.id} (${labelStudent} ${labelDate})`,
-    );
-    return null;
-  }
-
-  const notes = children
-    .map((child) => {
-      const richText = child[child.type]?.rich_text;
-      if (!Array.isArray(richText) || richText.length === 0) return "";
-      return richText.map((t) => t.plain_text).join(" ");
-    })
-    .join("\n");
-
-  return { date: extracted.fullDate, classLine: title.trim(), notes };
-};
-
-const getStudentPages = async () => {
-  const blocks = await fetchBlocks(STUDENT_LIST_PAGE_ID);
-  if (!Array.isArray(blocks)) return [];
-  return blocks.filter((b) => b.type === "child_page");
-};
-
-const getClassNotes = async (student, selectedMonth) => {
-  const studentName = student?.child_page?.title;
-  const blocks = await fetchBlocks(student.id);
-  if (!Array.isArray(blocks)) return [];
-  const togglesWithDates = blocks.filter(
-    (b) => {
-      if (b.type !== "toggle") return false;
-      const richText = b.toggle?.rich_text;
-      if (!Array.isArray(richText)) return false;
-      return richText.some((t) => /(\d{4})-(\d{2})-(\d{2})/.test(t.plain_text));
-    },
-  );
-  const processed = await Promise.all(
-    togglesWithDates.map((b) => processNotesToggle(b, selectedMonth, studentName)),
-  );
-  const valid = processed.filter(Boolean);
-  return valid;
-};
-
 const compileSummaries = async () => {
-  const studentPages = await getStudentPages();
-  if (!studentPages.length) return;
   const selectedMonth = getSelectedMonth();
   if (!MONTH_REGEX.test(selectedMonth)) {
     console.error(
@@ -107,15 +49,45 @@ const compileSummaries = async () => {
     );
     return;
   }
+  if (!ETH_ARTIFACT_ROOT) {
+    console.error(
+      "[makeClassSummaries] ETH_ARTIFACT_ROOT is required to read month artifact indexes.",
+    );
+    return;
+  }
+
   const dryRun = readFlag(["-t", "--test", "--dry-run"]);
   const summaryFileBase = `summaries_${selectedMonth}`;
   const summaryFilePath = `${summaryFileBase}.md`;
   const summaryYamlFilePath = `${summaryFileBase}.yaml`;
   const todayLocalIsoDate = getTodayLocalIsoDate();
   let summaries = readSummaryFile(summaryFilePath);
+  let monthArtifacts;
+
+  try {
+    monthArtifacts = readMonthArtifactIndex({
+      artifactRoot: ETH_ARTIFACT_ROOT,
+      month: selectedMonth,
+    });
+  } catch (error) {
+    console.error(
+      `[makeClassSummaries] Failed to read month artifact index for ${selectedMonth}: ${error.message}`,
+    );
+    return;
+  }
+
+  const entries = monthArtifacts.matchedEntries
+    .slice()
+    .sort(
+      (a, b) =>
+        a.studentSlug.localeCompare(b.studentSlug) ||
+        a.classDate.localeCompare(b.classDate) ||
+        a.sessionId.localeCompare(b.sessionId) ||
+        a.classLine.localeCompare(b.classLine),
+    );
 
   let stats = {
-    students: studentPages.length,
+    students: new Set(entries.map((entry) => entry.studentSlug)).size,
     notesEntries: 0,
     skippedExisting: 0,
     skippedFuture: 0,
@@ -124,68 +96,67 @@ const compileSummaries = async () => {
     summarized: 0,
   };
 
-  await Promise.all(
-    studentPages.map(async (student) => {
-      const studentNotes = await getClassNotes(student, selectedMonth);
-      if (!studentNotes.length) return;
-      stats.notesEntries += studentNotes.length;
-      await Promise.all(
-        studentNotes.map(async ({ date, classLine, notes }) => {
-          if (date > todayLocalIsoDate) {
-            stats.skippedFuture++;
-            return;
-          }
-          const header = buildSummaryHeader({ date, classLine });
-          const existingEntry = getExistingSummary({
-            summaries,
-            student: student.child_page.title,
-            date,
-            classLine,
-          });
-          const existingSummary = existingEntry?.summary ?? null;
-          const updateTitleIfNeeded = () => {
-            if (existingEntry && existingEntry.titleText !== header) {
-              existingEntry.titleText = header;
-              console.log(
-                `[makeClassSummaries] Updated title for ${student.child_page.title} ${date}: ${header}`,
-              );
-            }
-          };
-          const hasEnoughNotes = notes.length >= MIN_NOTES_LEN;
-          if (
-            existingSummary &&
-            (!existingSummary.startsWith("NOT ENOUGH NOTES") || !hasEnoughNotes)
-          ) {
-            updateTitleIfNeeded();
-            stats.skippedExisting++;
-            return;
-          }
-          if (dryRun) {
-            updateTitleIfNeeded();
-            return;
-          }
-          const newSummaryText = !hasEnoughNotes
-            ? `NOT ENOUGH NOTES ${notes}`
-            : await summarizeText(notes);
-          if (!newSummaryText) {
-            stats.failed++;
-            console.log(
-              `[makeClassSummaries] Failed to summarize ${student.child_page.title} ${date}`,
-            );
-            return;
-          }
-          addSummary({
-            summaries,
-            studentName: student.child_page.title,
-            date,
-            classLine,
-            newSummaryText,
-          });
-          hasEnoughNotes ? (stats.summarized++) : (stats.placeholders++);
-        }),
+  for (const entry of entries) {
+    stats.notesEntries++;
+    const studentLabel = entry.displayLabel;
+    const date = entry.classDate;
+    const classLine = entry.classLine;
+    const notes = entry.notesText.trim();
+
+    if (date > todayLocalIsoDate) {
+      stats.skippedFuture++;
+      continue;
+    }
+
+    const header = buildSummaryHeader({ date, classLine });
+    const existingEntry = getExistingSummary({
+      summaries,
+      student: studentLabel,
+      date,
+      classLine,
+    });
+    const existingSummary = existingEntry?.summary ?? null;
+    const updateTitleIfNeeded = () => {
+      if (existingEntry && existingEntry.titleText !== header) {
+        existingEntry.titleText = header;
+        console.log(
+          `[makeClassSummaries] Updated title for ${studentLabel} ${date}: ${header}`,
+        );
+      }
+    };
+    const hasEnoughNotes = notes.length >= MIN_NOTES_LEN;
+    if (
+      existingSummary &&
+      (!existingSummary.startsWith("NOT ENOUGH NOTES") || !hasEnoughNotes)
+    ) {
+      updateTitleIfNeeded();
+      stats.skippedExisting++;
+      continue;
+    }
+    if (dryRun) {
+      updateTitleIfNeeded();
+      continue;
+    }
+    const newSummaryText = !hasEnoughNotes
+      ? `NOT ENOUGH NOTES ${notes}`
+      : await summarizeText(notes);
+    if (!newSummaryText) {
+      stats.failed++;
+      console.log(
+        `[makeClassSummaries] Failed to summarize ${studentLabel} ${date}`,
       );
-    }),
-  );
+      continue;
+    }
+    addSummary({
+      summaries,
+      studentName: studentLabel,
+      date,
+      classLine,
+      newSummaryText,
+    });
+    hasEnoughNotes ? (stats.summarized++) : (stats.placeholders++);
+  }
+
   if (!dryRun) {
     writeSummaryFile(summaryFilePath, summaries);
     writeSummaryYamlFile(summaryYamlFilePath, summaries, { month: selectedMonth });
