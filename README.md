@@ -1,6 +1,6 @@
 # profesores
 
-`makeClassSummaries.js` reads canonical month note indexes from `ETH_ARTIFACT_ROOT` and then throttles Anthropic requests in-process so Claude does not get flooded by parallel summary jobs.
+`makeClassSummaries.js` reads canonical month note indexes from `ETH_ARTIFACT_ROOT` and then throttles Anthropic requests in-process so Claude does not get flooded by parallel summary jobs. It prefers `entitySlug` / entity labels when present and still accepts legacy `studentSlug` entries.
 
 Each run now writes two artifacts for the selected month:
 
