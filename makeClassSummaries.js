@@ -6,6 +6,7 @@ const { fetchBlocks } = require("./notionApi");
 const {
   readSummaryFile,
   writeSummaryFile,
+  writeSummaryYamlFile,
   addSummary,
   extractDateFromText,
   isDateInSelectedMonth,
@@ -109,6 +110,7 @@ const compileSummaries = async () => {
   const dryRun = readFlag(["-t", "--test", "--dry-run"]);
   const summaryFileBase = `summaries_${selectedMonth}`;
   const summaryFilePath = `${summaryFileBase}.md`;
+  const summaryYamlFilePath = `${summaryFileBase}.yaml`;
   const todayLocalIsoDate = getTodayLocalIsoDate();
   let summaries = readSummaryFile(summaryFilePath);
 
@@ -184,10 +186,13 @@ const compileSummaries = async () => {
       );
     }),
   );
-  if (!dryRun) writeSummaryFile(summaryFilePath, summaries);
+  if (!dryRun) {
+    writeSummaryFile(summaryFilePath, summaries);
+    writeSummaryYamlFile(summaryYamlFilePath, summaries, { month: selectedMonth });
+  }
   const mode = dryRun ? "DRY RUN" : "DONE";
   console.log(
-    `[makeClassSummaries] ${mode}: students=${stats.students}, entries=${stats.notesEntries}, skipped=${stats.skippedExisting}, skippedFuture=${stats.skippedFuture}, failed=${stats.failed}, summarized=${stats.summarized}, placeholders=${stats.placeholders}${dryRun ? '' : `, wrote=${summaryFilePath}`}`,
+    `[makeClassSummaries] ${mode}: students=${stats.students}, entries=${stats.notesEntries}, skipped=${stats.skippedExisting}, skippedFuture=${stats.skippedFuture}, failed=${stats.failed}, summarized=${stats.summarized}, placeholders=${stats.placeholders}${dryRun ? "" : `, wrote=${summaryFilePath}, wroteYaml=${summaryYamlFilePath}`}`,
   );
 };
 

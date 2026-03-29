@@ -163,6 +163,76 @@ const writeSummaryFile = (filePath, summaries) => {
   fs.writeFileSync(filePath, output, "utf-8");
 };
 
+const buildSummaryArtifactData = (summaries, options = {}) => {
+  const students = Object.keys(summaries)
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+    .map((student) => {
+      const entries = Object.keys(summaries[student] ?? {})
+        .sort()
+        .map((date) => {
+          const value = summaries[student][date] ?? {};
+          return {
+            date,
+            titleText: value.titleText ?? date,
+            summary: value.summary ?? "",
+          };
+        });
+
+      return {
+        name: student,
+        entries,
+      };
+    });
+
+  return {
+    month: options.month ?? null,
+    generatedAt: options.generatedAt ?? new Date().toISOString(),
+    studentCount: students.length,
+    entryCount: students.reduce((count, student) => count + student.entries.length, 0),
+    students,
+  };
+};
+
+const quoteYamlString = (value = "") => `'${String(value).replace(/'/g, "''")}'`;
+
+const buildYamlLiteralBlock = (value, indent) => {
+  const lines = String(value).split("\n");
+  return ["|-", ...lines.map((line) => `${indent}${line}`)].join("\n");
+};
+
+const buildSummaryYaml = (summaries, options = {}) => {
+  const data = buildSummaryArtifactData(summaries, options);
+  const lines = [
+    `month: ${data.month === null ? "null" : quoteYamlString(data.month)}`,
+    `generatedAt: ${quoteYamlString(data.generatedAt)}`,
+    `studentCount: ${data.studentCount}`,
+    `entryCount: ${data.entryCount}`,
+    "students:",
+  ];
+
+  data.students.forEach((student) => {
+    lines.push(`  - name: ${quoteYamlString(student.name)}`);
+    lines.push("    entries:");
+
+    student.entries.forEach((entry) => {
+      lines.push(`      - date: ${quoteYamlString(entry.date)}`);
+      lines.push(`        titleText: ${quoteYamlString(entry.titleText)}`);
+      if (entry.summary) {
+        lines.push(`        summary: ${buildYamlLiteralBlock(entry.summary, "          ")}`);
+      } else {
+        lines.push('        summary: ""');
+      }
+    });
+  });
+
+  return lines.join("\n");
+};
+
+const writeSummaryYamlFile = (filePath, summaries, options = {}) => {
+  const output = `${buildSummaryYaml(summaries, options)}\n`;
+  fs.writeFileSync(filePath, output, "utf-8");
+};
+
 const buildSummaryHeader = ({ date, classLine }) => {
   const trimmedLine = (classLine ?? "").trim();
   if (!trimmedLine) return date;
@@ -217,6 +287,9 @@ module.exports = {
   isDateInSelectedMonth,
   readSummaryFile,
   writeSummaryFile,
+  buildSummaryArtifactData,
+  buildSummaryYaml,
+  writeSummaryYamlFile,
   addSummary,
   buildSummaryHeader,
   readArgValue,
